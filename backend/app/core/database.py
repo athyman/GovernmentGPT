@@ -37,7 +37,10 @@ async def init_db():
     try:
         async with engine.begin() as conn:
             # Import all models to ensure they're registered
-            from app.models import document, legislator, user, search
+            from app.models.document import Document, DocumentEmbedding, DocumentVersion
+            from app.models.legislator import Legislator, LegislatorTerm  
+            from app.models.user import User, UserSession, UserSearchHistory, EmailVerification
+            from app.models.search import SearchCache, SearchAnalytics, PopularSearches, SearchSuggestions
             
             # Create all tables
             await conn.run_sync(Base.metadata.create_all)

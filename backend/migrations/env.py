@@ -12,7 +12,10 @@ from app.core.database import Base
 from app.core.config import settings
 
 # Import all models to ensure they're registered with Base
-from app.models import document, legislator, user, search
+from app.models.document import Document, DocumentEmbedding, DocumentVersion
+from app.models.legislator import Legislator, LegislatorTerm  
+from app.models.user import User, UserSession, UserSearchHistory, EmailVerification
+from app.models.search import SearchCache, SearchAnalytics, PopularSearches, SearchSuggestions
 
 # this is the Alembic Config object
 config = context.config
