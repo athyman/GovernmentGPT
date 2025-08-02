@@ -4,7 +4,6 @@ Represents members of Congress and their information.
 """
 
 from sqlalchemy import Column, String, Boolean, DateTime, Integer, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -18,7 +17,7 @@ class Legislator(Base):
     """
     __tablename__ = 'legislators'
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     bioguide_id = Column(String(10), unique=True, nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
@@ -78,8 +77,8 @@ class LegislatorTerm(Base):
     """
     __tablename__ = 'legislator_terms'
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    legislator_id = Column(UUID(as_uuid=True), ForeignKey('legislators.id'), nullable=False)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    legislator_id = Column(String(36), ForeignKey('legislators.id'), nullable=False)
     chamber = Column(String(10), nullable=False)  # 'house' or 'senate'
     state = Column(String(2), nullable=False)
     district = Column(String(10))  # For House terms

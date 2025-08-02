@@ -12,14 +12,25 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Database engine
-engine = create_async_engine(
-    settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    echo=settings.DEBUG,
-    future=True
-)
+# Database engine - handle both SQLite and PostgreSQL
+if "sqlite" in settings.DATABASE_URL:
+    # SQLite configuration
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.DEBUG,
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False}
+    )
+else:
+    # PostgreSQL configuration
+    engine = create_async_engine(
+        settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
+        pool_size=settings.DATABASE_POOL_SIZE,
+        max_overflow=settings.DATABASE_MAX_OVERFLOW,
+        echo=settings.DEBUG,
+        future=True
+    )
 
 # Session factory
 AsyncSessionLocal = async_sessionmaker(

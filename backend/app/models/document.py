@@ -3,8 +3,7 @@ Document models for GovernmentGPT.
 Represents congressional bills and executive orders.
 """
 
-from sqlalchemy import Column, String, Text, Date, DateTime, Boolean, Integer, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Text, Date, DateTime, Boolean, Integer, ForeignKey, Index, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -20,7 +19,7 @@ class Document(Base):
     """
     __tablename__ = 'documents'
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     document_type = Column(String(20), nullable=False)  # 'bill' or 'executive_order'
     identifier = Column(String(50), nullable=False)  # e.g., 'HR-1234-118' or 'EO-14000'
     title = Column(Text, nullable=False)
@@ -29,8 +28,8 @@ class Document(Base):
     status = Column(String(50))
     introduced_date = Column(Date)
     last_action_date = Column(Date)
-    sponsor_id = Column(UUID(as_uuid=True), ForeignKey('legislators.id'))
-    metadata = Column(JSONB, default={})  # Flexible storage for varying government data
+    sponsor_id = Column(String(36), ForeignKey('legislators.id'))
+    doc_metadata = Column(JSON, default={})  # Flexible storage for varying government data
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -38,12 +37,12 @@ class Document(Base):
     sponsor = relationship("Legislator", back_populates="sponsored_documents")
     embeddings = relationship("DocumentEmbedding", back_populates="document", cascade="all, delete-orphan")
     
-    # Indexes
+    # Indexes (SQLite compatible)
     __table_args__ = (
         Index('idx_documents_type_date', 'document_type', 'introduced_date'),
-        Index('idx_documents_status_active', 'status', postgresql_where=Column('status').in_(['introduced', 'passed', 'signed'])),
         Index('idx_documents_identifier', 'document_type', 'identifier', unique=True),
-        Index('idx_documents_search', func.to_tsvector('english', Column('title') + ' ' + func.coalesce(Column('summary'), '') + ' ' + Column('full_text')), postgresql_using='gin'),
+        Index('idx_documents_status', 'status'),
+        Index('idx_documents_title', 'title'),
     )
     
     def __repr__(self):
@@ -57,7 +56,7 @@ class DocumentEmbedding(Base):
     """
     __tablename__ = 'document_embeddings'
     
-    document_id = Column(UUID(as_uuid=True), ForeignKey('documents.id'), primary_key=True)
+    document_id = Column(String(36), ForeignKey('documents.id'), primary_key=True)
     chunk_index = Column(Integer, primary_key=True)
     chunk_text = Column(Text, nullable=False)
     # Note: vector type requires pgvector extension
@@ -76,8 +75,8 @@ class DocumentVersion(Base):
     """
     __tablename__ = 'document_versions'
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id = Column(UUID(as_uuid=True), ForeignKey('documents.id'), nullable=False)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id = Column(String(36), ForeignKey('documents.id'), nullable=False)
     version_number = Column(String(20), nullable=False)  # e.g., 'ih', 'eh', 'enr'
     version_date = Column(Date, nullable=False)
     full_text = Column(Text, nullable=False)

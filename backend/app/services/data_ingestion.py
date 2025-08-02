@@ -102,7 +102,7 @@ class DataIngestionService:
                                     introduced_date=bill_data.get("introduced_date"),
                                     last_action_date=bill_data.get("last_action_date"),
                                     sponsor_id=sponsor_id,
-                                    metadata=bill_data["metadata"]
+                                    doc_metadata=bill_data["metadata"]
                                 )
                                 
                                 db.add(new_bill)
@@ -203,7 +203,7 @@ class DataIngestionService:
                                     status=doc_data["status"],
                                     introduced_date=doc_data.get("introduced_date"),
                                     last_action_date=doc_data.get("last_action_date"),
-                                    metadata=doc_data["metadata"]
+                                    doc_metadata=doc_data["metadata"]
                                 )
                                 
                                 db.add(new_doc)
