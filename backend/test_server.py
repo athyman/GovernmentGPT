@@ -44,7 +44,9 @@ app.add_middleware(
 # Pydantic models
 class SearchRequest(BaseModel):
     query: str
+    search_type: Optional[str] = "keyword"
     limit: Optional[int] = 20
+    offset: Optional[int] = 0
 
 class DocumentResult(BaseModel):
     id: str
@@ -55,12 +57,15 @@ class DocumentResult(BaseModel):
     status: str
     introduced_date: Optional[str]
     last_action_date: Optional[str]
+    relevance_score: Optional[float] = 1.0
 
 class SearchResponse(BaseModel):
     query: str
-    results: List[DocumentResult]
-    total_count: int
-    execution_time_ms: int
+    search_type: str
+    total_results: int
+    returned_results: int
+    response_time_ms: int
+    documents: List[DocumentResult]
 
 @app.get("/health")
 async def health_check():
@@ -76,40 +81,24 @@ async def health_check():
         "message": "GovernmentGPT Test API is running"
     }
 
-@app.post("/api/search", response_model=SearchResponse)
+@app.post("/api/v1/search", response_model=SearchResponse)
 async def search_documents(request: SearchRequest):
-    """Search government documents"""
+    """Search government documents with enhanced search capabilities"""
     import time
+    from semantic_search import EnhancedSearchService
+    
     start_time = time.time()
     
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="Search query cannot be empty")
     
-    query = request.query.strip().lower()
-    
-    async with AsyncSessionLocal() as db:
-        # Simple text search across title and summary
-        stmt = select(Document).where(
-            or_(
-                Document.title.ilike(f"%{query}%"),
-                Document.summary.ilike(f"%{query}%"),
-                Document.identifier.ilike(f"%{query}%")
-            )
-        ).limit(request.limit)
-        
-        result = await db.execute(stmt)
-        documents = result.scalars().all()
-        
-        # Get total count for different query
-        count_stmt = select(Document).where(
-            or_(
-                Document.title.ilike(f"%{query}%"),
-                Document.summary.ilike(f"%{query}%"),
-                Document.identifier.ilike(f"%{query}%")
-            )
-        )
-        count_result = await db.execute(count_stmt)
-        total_count = len(count_result.scalars().all())
+    # Use enhanced search service
+    search_service = EnhancedSearchService()
+    documents, total_count = await search_service.enhanced_search(
+        query=request.query,
+        limit=request.limit,
+        offset=request.offset or 0
+    )
     
     # Convert to response format
     results = []
@@ -122,19 +111,84 @@ async def search_documents(request: SearchRequest):
             document_type=doc.document_type,
             status=doc.status or "",
             introduced_date=doc.introduced_date.isoformat() if doc.introduced_date else None,
-            last_action_date=doc.last_action_date.isoformat() if doc.last_action_date else None
+            last_action_date=doc.last_action_date.isoformat() if doc.last_action_date else None,
+            relevance_score=1.0
         ))
     
     execution_time = int((time.time() - start_time) * 1000)
     
     return SearchResponse(
         query=request.query,
-        results=results,
-        total_count=total_count,
-        execution_time_ms=execution_time
+        search_type=request.search_type or "enhanced_keyword",
+        total_results=total_count,
+        returned_results=len(results),
+        response_time_ms=execution_time,
+        documents=results
     )
 
-@app.get("/api/documents/stats")
+@app.get("/api/v1/search/recent")
+async def get_recent_documents(limit: int = 10, document_type: Optional[str] = None):
+    """Get recent government documents"""
+    async with AsyncSessionLocal() as db:
+        # Get recent documents ordered by last_action_date
+        stmt = select(Document)
+        
+        if document_type:
+            stmt = stmt.where(Document.document_type == document_type)
+        
+        stmt = stmt.order_by(Document.last_action_date.desc()).limit(limit)
+        
+        result = await db.execute(stmt)
+        documents = result.scalars().all()
+    
+    # Convert to response format
+    document_list = []
+    for doc in documents:
+        document_list.append({
+            "id": doc.id,
+            "identifier": doc.identifier,
+            "title": doc.title,
+            "summary": doc.summary or "",
+            "document_type": doc.document_type,
+            "status": doc.status or "",
+            "introduced_date": doc.introduced_date.isoformat() if doc.introduced_date else None,
+            "last_action_date": doc.last_action_date.isoformat() if doc.last_action_date else None
+        })
+    
+    return {"documents": document_list}
+
+@app.get("/api/v1/documents/{document_identifier}")
+async def get_document(document_identifier: str):
+    """Get detailed information for a specific document"""
+    async with AsyncSessionLocal() as db:
+        # Search by identifier
+        stmt = select(Document).where(Document.identifier == document_identifier)
+        result = await db.execute(stmt)
+        document = result.scalar_one_or_none()
+        
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Convert to detailed response format
+        doc_response = {
+            "id": document.id,
+            "identifier": document.identifier,
+            "title": document.title,
+            "summary": document.summary or "",
+            "full_text": document.full_text or document.title,
+            "document_type": document.document_type,
+            "status": document.status or "",
+            "introduced_date": document.introduced_date.isoformat() if document.introduced_date else None,
+            "last_action_date": document.last_action_date.isoformat() if document.last_action_date else None,
+            "sponsor": None,  # Will be populated if sponsor_id exists
+            "metadata": document.doc_metadata or {},
+            "created_at": document.created_at.isoformat() if document.created_at else None,
+            "updated_at": document.updated_at.isoformat() if document.updated_at else None
+        }
+        
+        return doc_response
+
+@app.get("/api/v1/documents/stats")
 async def document_stats():
     """Get document statistics"""
     async with AsyncSessionLocal() as db:
