@@ -56,16 +56,20 @@ export function Header({ onBackToHome, showBackButton = false }: HeaderProps) {
             >
               How It Works
             </Link>
-            <Link
-              href="/api"
-              className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors"
-            >
-              API
-            </Link>
           </nav>
 
           {/* User Actions */}
           <div className="flex items-center space-x-4">
+            {/* Donate Button - Desktop */}
+            <div className="hidden md:block">
+              <Link
+                href="/donate"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors"
+              >
+                Donate
+              </Link>
+            </div>
+
             {/* Mobile menu button */}
             <button
               type="button"
@@ -116,10 +120,10 @@ export function Header({ onBackToHome, showBackButton = false }: HeaderProps) {
             How It Works
           </Link>
           <Link
-            href="/api"
-            className="block px-3 py-2 text-base font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+            href="/donate"
+            className="block px-3 py-2 text-base font-medium text-white bg-green-600 hover:bg-green-700 rounded-md mx-3 text-center transition-colors"
           >
-            API
+            Donate
           </Link>
         </div>
         <div className="pt-4 pb-3 border-t border-gray-200">

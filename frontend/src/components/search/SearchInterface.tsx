@@ -5,7 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { SearchBar } from './SearchBar';
 import { SearchResults } from './SearchResults';
-import { searchDocuments, type SearchRequest } from '@/lib/api';
+import { ClaudeResponse } from './ClaudeResponse';
+import { searchDocuments, type SearchRequest, type ConversationalSearchResponse } from '@/lib/api';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface SearchInterfaceProps {
@@ -18,7 +19,7 @@ export function SearchInterface({ onSearch, initialQuery = '', showResults = fal
   const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(
     initialQuery ? {
       query: initialQuery,
-      search_type: 'hybrid',
+      search_type: 'conversational',
       limit: 20,
       offset: 0,
     } : null
@@ -34,7 +35,7 @@ export function SearchInterface({ onSearch, initialQuery = '', showResults = fal
   const handleSearch = useCallback((query: string, filters?: any) => {
     const newSearchRequest: SearchRequest = {
       query,
-      search_type: 'hybrid',
+      search_type: 'conversational',
       filters,
       limit: 20,
       offset: 0,
@@ -43,6 +44,10 @@ export function SearchInterface({ onSearch, initialQuery = '', showResults = fal
     setSearchRequest(newSearchRequest);
     onSearch?.(query);
   }, [onSearch]);
+
+  const handleSuggestionClick = useCallback((suggestion: string) => {
+    handleSearch(suggestion);
+  }, [handleSearch]);
 
   return (
     <div className="w-full">
@@ -81,10 +86,25 @@ export function SearchInterface({ onSearch, initialQuery = '', showResults = fal
               </button>
             </div>
           ) : searchResults ? (
-            <SearchResults 
-              results={searchResults}
-              onRefineSearch={handleSearch}
-            />
+            <div className="space-y-6">
+              {/* Claude AI Response */}
+              {searchResults.claude_response && (
+                <ClaudeResponse
+                  query={searchResults.query}
+                  response={searchResults.claude_response}
+                  confidence={searchResults.confidence}
+                  suggestions={searchResults.suggestions}
+                  responseTime={searchResults.response_time_ms}
+                  onSuggestionClick={handleSuggestionClick}
+                />
+              )}
+              
+              {/* Search Results */}
+              <SearchResults 
+                results={searchResults}
+                onRefineSearch={handleSearch}
+              />
+            </div>
           ) : null}
         </div>
       )}

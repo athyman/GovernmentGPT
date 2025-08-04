@@ -99,7 +99,19 @@ export default function LegislationDetailPage() {
             </div>
             
             <h1 className="text-3xl font-bold text-gray-900 mb-4">
-              {document.title}
+              {document.metadata?.web_url ? (
+                <a 
+                  href={document.metadata.web_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-government-600 hover:text-government-700 hover:underline transition-colors"
+                >
+                  {document.title}
+                  <span className="ml-2 text-sm text-gray-500">↗</span>
+                </a>
+              ) : (
+                document.title
+              )}
             </h1>
             
             <div className="flex flex-wrap gap-6 text-sm text-gray-500">
@@ -144,20 +156,150 @@ export default function LegislationDetailPage() {
                 </Card>
               )}
 
-              {/* Full text */}
+              {/* Document Content */}
               <Card>
                 <CardHeader>
                   <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
                     <DocumentTextIcon className="h-5 w-5" />
-                    Full Text
+                    Legislative Information
+                    {document.metadata?.web_url && (
+                      <a 
+                        href={document.metadata.web_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto text-sm text-government-600 hover:text-government-700 font-normal flex items-center gap-1"
+                      >
+                        View on Congress.gov ↗
+                      </a>
+                    )}
                   </h2>
                 </CardHeader>
                 <CardContent>
-                  <div className="prose prose-sm max-w-none">
-                    <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700 leading-relaxed">
-                      {document.full_text}
-                    </pre>
-                  </div>
+                  {document.full_text ? (
+                    <div className="space-y-4">
+                      {/* Check if content is structured or just basic info */}
+                      {document.full_text.includes('TITLE:') ? (
+                        // Structured content - parse and display nicely
+                        <div className="space-y-4">
+                          {document.full_text.split('\n\n').map((section, index) => {
+                            if (section.startsWith('TITLE:')) {
+                              return (
+                                <div key={index} className="pb-2 border-b border-gray-200">
+                                  <h3 className="font-semibold text-gray-900 mb-2">Official Title</h3>
+                                  <p className="text-gray-700 italic">{section.replace('TITLE: ', '')}</p>
+                                </div>
+                              );
+                            } else if (section.startsWith('SPONSOR:')) {
+                              return (
+                                <div key={index} className="pb-2 border-b border-gray-200">
+                                  <h3 className="font-semibold text-gray-900 mb-2">Primary Sponsor</h3>
+                                  <p className="text-gray-700">{section.replace('SPONSOR: ', '')}</p>
+                                </div>
+                              );
+                            } else if (section.startsWith('SUMMARY:')) {
+                              return (
+                                <div key={index} className="pb-2 border-b border-gray-200">
+                                  <h3 className="font-semibold text-gray-900 mb-2">Congressional Summary</h3>
+                                  <p className="text-gray-700 leading-relaxed">{section.replace('SUMMARY: ', '')}</p>
+                                </div>
+                              );
+                            } else if (section.startsWith('RECENT ACTIONS:')) {
+                              return (
+                                <div key={index} className="pb-2 border-b border-gray-200">
+                                  <h3 className="font-semibold text-gray-900 mb-2">Recent Legislative Actions</h3>
+                                  <div className="text-gray-700 space-y-1">
+                                    {section.replace('RECENT ACTIONS:\n', '').split('\n').map((action, idx) => (
+                                      <p key={idx} className="text-sm">{action}</p>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            } else if (section.startsWith('POLICY AREA:')) {
+                              return (
+                                <div key={index} className="pb-2 border-b border-gray-200">
+                                  <h3 className="font-semibold text-gray-900 mb-2">Policy Area</h3>
+                                  <p className="text-gray-700">{section.replace('POLICY AREA: ', '')}</p>
+                                </div>
+                              );
+                            } else if (section.startsWith('SUBJECTS:')) {
+                              return (
+                                <div key={index} className="pb-2 border-b border-gray-200">
+                                  <h3 className="font-semibold text-gray-900 mb-2">Subject Areas</h3>
+                                  <p className="text-gray-700">{section.replace('SUBJECTS: ', '')}</p>
+                                </div>
+                              );
+                            } else if (section.startsWith('COMMITTEES:')) {
+                              return (
+                                <div key={index} className="pb-2 border-b border-gray-200">
+                                  <h3 className="font-semibold text-gray-900 mb-2">Assigned Committees</h3>
+                                  <p className="text-gray-700">{section.replace('COMMITTEES: ', '')}</p>
+                                </div>
+                              );
+                            } else if (section.startsWith('BILL TEXT:')) {
+                              return (
+                                <div key={index}>
+                                  <h3 className="font-semibold text-gray-900 mb-3">Full Legislative Text</h3>
+                                  <div className="whitespace-pre-wrap font-mono text-sm text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-lg border max-h-96 overflow-y-auto">
+                                    {section.replace('BILL TEXT:\n', '')}
+                                  </div>
+                                </div>
+                              );
+                            } else if (section.trim()) {
+                              return (
+                                <div key={index} className="pb-2 border-b border-gray-200">
+                                  <p className="text-gray-700">{section}</p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })}
+                        </div>
+                      ) : (
+                        // Unstructured content - display as-is
+                        <div className="whitespace-pre-wrap font-sans text-sm text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-lg border">
+                          {document.full_text}
+                        </div>
+                      )}
+                      
+                      {/* Additional note about full text availability */}
+                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-sm text-blue-800">
+                          <strong>Note:</strong> Full bill text may not be available for all legislation, especially bills in early stages. 
+                          For complete legislative text and the most current information, visit the official {' '}
+                          {document.metadata?.web_url ? (
+                            <a 
+                              href={document.metadata.web_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline"
+                            >
+                              Congress.gov page
+                            </a>
+                          ) : (
+                            'Congress.gov page'
+                          )}.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <DocumentTextIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Content Not Available</h3>
+                      <p className="text-gray-600 mb-4">
+                        Detailed content for this legislation is not currently available. This often occurs for bills in early stages of the legislative process.
+                      </p>
+                      {document.metadata?.web_url && (
+                        <a 
+                          href={document.metadata.web_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-government-600 hover:bg-government-700 transition-colors"
+                        >
+                          View on Congress.gov ↗
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -259,7 +401,14 @@ export default function LegislationDetailPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2 text-sm">
-                      {Object.entries(document.metadata).map(([key, value]) => (
+                      {Object.entries(document.metadata)
+                        .filter(([key, value]) => 
+                          !key.includes('url') && 
+                          !key.includes('text_fetched') && 
+                          value !== null && 
+                          value !== ''
+                        )
+                        .map(([key, value]) => (
                         <div key={key}>
                           <span className="font-medium text-gray-700 capitalize">
                             {key.replace('_', ' ')}:
