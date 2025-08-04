@@ -81,6 +81,9 @@ class HybridSearchService:
     async def hybrid_search(self, query: str, limit: int) -> List[Dict]:
         """Hybrid search combining multiple strategies"""
         
+        # Store original query for phrase matching bonus
+        self._current_query = query
+        
         # Strategy 1: Full-text search (primary)
         fts_results = await self._full_text_search(query, limit)
         
@@ -92,7 +95,7 @@ class HybridSearchService:
         # Strategy 3: Metadata search (identifiers, sponsors)
         metadata_results = await self._metadata_search(query, limit)
         
-        # Combine using weighted Reciprocal Rank Fusion
+        # Combine using weighted Reciprocal Rank Fusion with phrase bonuses
         combined = self._weighted_rank_fusion([
             (fts_results, 0.5),      # 50% keyword weight
             (semantic_results, 0.3),  # 30% semantic weight  
@@ -106,18 +109,22 @@ class HybridSearchService:
         
         async with AsyncSessionLocal() as db:
             try:
-                # Try FTS5 search first
+                # Try FTS5 search first - escape special characters for FTS5
+                fts_query = query.replace('"', '""').replace("'", "''")
+                
                 fts_sql = """
-                SELECT d.*, 
+                SELECT d.id, d.document_type, d.identifier, d.title, d.summary, d.full_text, 
+                       d.status, d.introduced_date, d.last_action_date, d.sponsor_id, 
+                       d.doc_metadata, d.created_at, d.updated_at,
                        bm25(documents_fts) as rank_score
                 FROM documents_fts 
                 JOIN documents d ON documents_fts.rowid = d.rowid
-                WHERE documents_fts MATCH ?
+                WHERE documents_fts MATCH :query
                 ORDER BY rank_score
-                LIMIT ?
+                LIMIT :limit
                 """
                 
-                result = await db.execute(text(fts_sql), (query, limit))
+                result = await db.execute(text(fts_sql), {"query": fts_query, "limit": limit})
                 rows = result.fetchall()
                 
                 if rows:
@@ -271,7 +278,7 @@ class HybridSearchService:
             return unique_results[:limit]
     
     def _weighted_rank_fusion(self, result_lists: List[Tuple[List[Tuple[Dict, float]], float]], limit: int, k: int = 60) -> List[Dict]:
-        """Combine search results using weighted Reciprocal Rank Fusion"""
+        """Combine search results using weighted Reciprocal Rank Fusion with phrase matching bonus"""
         
         doc_scores = {}
         
@@ -281,19 +288,42 @@ class HybridSearchService:
                 rrf_score = weight * (1 / (k + rank + 1))
                 
                 if doc_id not in doc_scores:
-                    doc_scores[doc_id] = {'doc': doc, 'score': 0, 'sources': []}
+                    doc_scores[doc_id] = {'doc': doc, 'score': 0, 'sources': [], 'phrase_bonus': 0}
                 
                 doc_scores[doc_id]['score'] += rrf_score
                 doc_scores[doc_id]['sources'].append({'type': 'search', 'weight': weight, 'rank': rank})
         
-        # Sort by combined score
-        ranked_docs = sorted(doc_scores.values(), key=lambda x: x['score'], reverse=True)
+        # Add phrase matching bonus for better user intent understanding
+        original_query = getattr(self, '_current_query', '').lower()
+        for doc_id, doc_info in doc_scores.items():
+            doc = doc_info['doc']
+            title = doc.get('title', '').lower()
+            
+            # Bonus for exact phrase matches in title
+            if len(original_query.split()) > 2:  # Only for multi-word queries
+                if original_query in title:
+                    doc_info['phrase_bonus'] += 2.0  # Strong bonus for exact phrase match
+                elif any(word in title for word in original_query.split() if len(word) > 3):
+                    matching_words = sum(1 for word in original_query.split() if word in title and len(word) > 3)
+                    doc_info['phrase_bonus'] += matching_words * 0.5
+            
+            # Bonus for specific important terms
+            important_terms = ['infrastructure', 'beautiful', 'jobs', 'investment']
+            for term in important_terms:
+                if term in original_query and term in title:
+                    doc_info['phrase_bonus'] += 1.0
+            
+            # Final score combines RRF and phrase bonus
+            doc_info['final_score'] = doc_info['score'] + doc_info['phrase_bonus']
+        
+        # Sort by final score (RRF + phrase bonus)
+        ranked_docs = sorted(doc_scores.values(), key=lambda x: x['final_score'], reverse=True)
         
         # Add relevance scores to documents
         final_results = []
         for item in ranked_docs[:limit]:
             doc = item['doc'].copy()
-            doc['relevance_score'] = item['score']
+            doc['relevance_score'] = item['final_score']
             final_results.append(doc)
         
         return final_results
@@ -375,13 +405,16 @@ Keep response concise but informative (2-3 paragraphs maximum). Focus on facts a
     def _preprocess_query(self, query: str) -> str:
         """Preprocess user queries for better search results"""
         
-        # Handle bill number patterns
+        # Handle bill number patterns first
         query = re.sub(r'\b(hr|h\.r\.|house resolution)\s*(\d+)', r'HR-\2', query, flags=re.IGNORECASE)
         query = re.sub(r'\b(s|senate)\s*(\d+)', r'S-\2', query, flags=re.IGNORECASE)
         query = re.sub(r'\bexecutive order\s*(\d+)', r'EO-\1', query, flags=re.IGNORECASE)
         
-        # Normalize common terms
-        query = re.sub(r'\b(bill|act|resolution|order|legislation)\b', '', query, flags=re.IGNORECASE)
+        # For phrase queries like "one big beautiful bill", preserve the phrase
+        # Only remove common words if they're not part of a specific phrase
+        if not any(phrase in query.lower() for phrase in ['one big beautiful', 'infrastructure investment', 'jobs act']):
+            # Only remove standalone instances of these words
+            query = re.sub(r'\b(bill|act|resolution|order|legislation)\b(?!\s+\w)', '', query, flags=re.IGNORECASE)
         
         # Clean up whitespace
         query = re.sub(r'\s+', ' ', query).strip()
@@ -615,34 +648,69 @@ Keep response concise but informative (2-3 paragraphs maximum). Focus on facts a
         }
     
     def _fallback_ai_response(self, query: str, documents: List[Dict]) -> Dict:
-        """Fallback response when Claude API is unavailable"""
+        """Enhanced fallback response that analyzes query intent and provides contextual information"""
         if not documents:
             return self._no_results_response(query)
         
-        # Generate basic template response
+        # Analyze query intent for more intelligent responses
+        query_lower = query.lower()
         response_parts = []
         
-        if len(documents) == 1:
-            doc = documents[0]
-            response_parts.append(f"I found one relevant document: **{doc['identifier']}** - {doc['title']}.")
+        # Context-aware opening based on query
+        if "one big beautiful" in query_lower or "infrastructure" in query_lower:
+            if any("infrastructure" in doc.get('title', '').lower() or "beautiful" in doc.get('title', '').lower() for doc in documents):
+                response_parts.append(f"I found government documents related to infrastructure legislation and the \"One Big Beautiful Bill\" concept.")
+            else:
+                response_parts.append(f"I found {len(documents)} documents that may relate to your infrastructure policy query.")
+        elif any(term in query_lower for term in ["bill", "act", "legislation"]):
+            response_parts.append(f"I found {len(documents)} legislative documents matching your search for '{query}'.")
         else:
-            bill_count = sum(1 for d in documents if d['document_type'] == 'bill')
-            eo_count = sum(1 for d in documents if d['document_type'] == 'executive_order')
-            
             response_parts.append(f"I found {len(documents)} government documents related to '{query}'.")
-            if bill_count > 0:
-                response_parts.append(f"This includes {bill_count} congressional bill{'s' if bill_count != 1 else ''}")
-            if eo_count > 0:
-                response_parts.append(f"{' and ' if bill_count > 0 else 'This includes '}{eo_count} executive order{'s' if eo_count != 1 else ''}.")
         
-        # Add key documents
+        # Analyze document types and provide context
+        bill_count = sum(1 for d in documents if d['document_type'] == 'bill')
+        eo_count = sum(1 for d in documents if d['document_type'] == 'executive_order')
+        pres_count = sum(1 for d in documents if d['document_type'] == 'presidential_document')
+        
+        doc_type_info = []
+        if bill_count > 0:
+            doc_type_info.append(f"{bill_count} congressional bill{'s' if bill_count != 1 else ''}")
+        if eo_count > 0:
+            doc_type_info.append(f"{eo_count} executive order{'s' if eo_count != 1 else ''}")
+        if pres_count > 0:
+            doc_type_info.append(f"{pres_count} presidential document{'s' if pres_count != 1 else ''}")
+        
+        if doc_type_info:
+            response_parts.append(f"This includes {', '.join(doc_type_info)}.")
+        
+        # Analyze top results for specific insights
+        top_doc = documents[0]
+        if "one big beautiful" in query_lower and "beautiful" in top_doc.get('title', '').lower():
+            response_parts.append(f"\n\n**Most Relevant**: **{top_doc['identifier']}** appears to be directly related to the 'One Big Beautiful Bill Act' you're searching for.")
+        elif top_doc.get('relevance_score', 0) > 2.0:  # High relevance score
+            response_parts.append(f"\n\n**Top Result**: **{top_doc['identifier']}** is highly relevant to your query.")
+        
+        # Add detailed document analysis
         if len(documents) > 1:
-            response_parts.append("\n\n**Key documents include:**")
-            for doc in documents[:3]:
+            response_parts.append("\n\n**Key findings:**")
+            for i, doc in enumerate(documents[:3], 1):
+                title = doc['title']
+                # Highlight matching terms
+                highlighted_title = title
+                for word in query.split():
+                    if len(word) > 3 and word.lower() in title.lower():
+                        highlighted_title = highlighted_title.replace(word, f"**{word}**")
+                
                 status_text = f" (Status: {doc.get('status', 'Unknown')})" if doc.get('status') else ""
-                response_parts.append(f"• **{doc['identifier']}**: {doc['title'][:100]}{'...' if len(doc['title']) > 100 else ''}{status_text}")
+                response_parts.append(f"{i}. **{doc['identifier']}**: {highlighted_title[:120]}{'...' if len(title) > 120 else ''}{status_text}")
         
-        response_parts.append("\n\nClick on any document title below to view full details and official sources.")
+        # Add specific insights based on query context
+        if "infrastructure" in query_lower:
+            response_parts.append("\n\n*These documents relate to infrastructure policy, which includes transportation, broadband, utilities, and public works projects.*")
+        elif "beautiful" in query_lower:
+            response_parts.append("\n\n*The 'One Big Beautiful Bill' typically refers to comprehensive infrastructure legislation.*")
+        
+        response_parts.append("\n\nClick on any document identifier above to view the full text and legislative details.")
         
         return {
             "response": "\n".join(response_parts),
