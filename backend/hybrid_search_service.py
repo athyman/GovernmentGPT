@@ -405,15 +405,41 @@ Keep response concise but informative (2-3 paragraphs maximum). Focus on facts a
     def _preprocess_query(self, query: str) -> str:
         """Preprocess user queries for better search results"""
         
-        # Handle bill number patterns first
+        # Handle conversational queries - extract key terms
+        query_lower = query.lower()
+        
+        # Extract key legislative terms from conversational queries
+        if any(phrase in query_lower for phrase in ['what can you tell me', 'tell me about', 'what are', 'what is']):
+            # For conversational queries, extract the core subject
+            if 'big beautiful bill' in query_lower:
+                return 'big beautiful bill infrastructure'
+            elif 'infrastructure' in query_lower and any(word in query_lower for word in ['investment', 'jobs']):
+                return 'infrastructure investment jobs act'
+            elif 'climate' in query_lower:
+                return 'climate change legislation'
+            # Extract other key terms
+            key_terms = []
+            for word in query.split():
+                if len(word) > 4 and word.lower() not in ['what', 'can', 'you', 'tell', 'me', 'about', 'the', 'are', 'major', 'most']:
+                    key_terms.append(word.lower())
+            if key_terms:
+                return ' '.join(key_terms[:4])  # Limit to top 4 terms
+        
+        # Handle bill number patterns
         query = re.sub(r'\b(hr|h\.r\.|house resolution)\s*(\d+)', r'HR-\2', query, flags=re.IGNORECASE)
         query = re.sub(r'\b(s|senate)\s*(\d+)', r'S-\2', query, flags=re.IGNORECASE)
         query = re.sub(r'\bexecutive order\s*(\d+)', r'EO-\1', query, flags=re.IGNORECASE)
         
-        # For phrase queries like "one big beautiful bill", preserve the phrase
-        # Only remove common words if they're not part of a specific phrase
-        if not any(phrase in query.lower() for phrase in ['one big beautiful', 'infrastructure investment', 'jobs act']):
-            # Only remove standalone instances of these words
+        # For phrase queries, preserve important phrases
+        important_phrases = [
+            'one big beautiful', 'big beautiful bill', 'infrastructure investment', 'jobs act',
+            'beautiful bill', 'infrastructure act', 'investment act'
+        ]
+        
+        preserve_phrase = any(phrase in query.lower() for phrase in important_phrases)
+        
+        if not preserve_phrase:
+            # Only remove standalone instances of these words when not part of important phrases
             query = re.sub(r'\b(bill|act|resolution|order|legislation)\b(?!\s+\w)', '', query, flags=re.IGNORECASE)
         
         # Clean up whitespace
@@ -648,7 +674,7 @@ Keep response concise but informative (2-3 paragraphs maximum). Focus on facts a
         }
     
     def _fallback_ai_response(self, query: str, documents: List[Dict]) -> Dict:
-        """Enhanced fallback response that analyzes query intent and provides contextual information"""
+        """Enhanced fallback response that analyzes query intent and provides detailed policy information"""
         if not documents:
             return self._no_results_response(query)
         
@@ -656,61 +682,82 @@ Keep response concise but informative (2-3 paragraphs maximum). Focus on facts a
         query_lower = query.lower()
         response_parts = []
         
-        # Context-aware opening based on query
-        if "one big beautiful" in query_lower or "infrastructure" in query_lower:
-            if any("infrastructure" in doc.get('title', '').lower() or "beautiful" in doc.get('title', '').lower() for doc in documents):
-                response_parts.append(f"I found government documents related to infrastructure legislation and the \"One Big Beautiful Bill\" concept.")
-            else:
-                response_parts.append(f"I found {len(documents)} documents that may relate to your infrastructure policy query.")
-        elif any(term in query_lower for term in ["bill", "act", "legislation"]):
-            response_parts.append(f"I found {len(documents)} legislative documents matching your search for '{query}'.")
+        # Check if user is asking specific questions about provisions/content
+        asking_about_provisions = any(term in query_lower for term in [
+            'provisions', 'what are', 'major', 'consequential', 'key points', 'main points',
+            'what does', 'contents', 'includes', 'covers'
+        ])
+        
+        asking_about_big_beautiful = any(term in query_lower for term in [
+            'big beautiful bill', 'beautiful bill', 'one big beautiful'
+        ])
+        
+        # Enhanced response for "Big Beautiful Bill" queries
+        if asking_about_big_beautiful:
+            # Find the most relevant OBBBA document
+            obbba_doc = None
+            infrastructure_docs = []
+            
+            for doc in documents:
+                title_lower = doc.get('title', '').lower()
+                if 'one big beautiful bill' in title_lower or 'beautiful bill' in title_lower:
+                    obbba_doc = doc
+                elif any(term in title_lower for term in ['infrastructure', 'investment', 'jobs']):
+                    infrastructure_docs.append(doc)
+            
+            if obbba_doc:
+                response_parts.append(f"**About the 'Big Beautiful Bill' (One Big Beautiful Bill Act):**")
+                response_parts.append(f"The primary document I found is **{obbba_doc['identifier']}**: {obbba_doc['title']}")
+                
+                # Try to extract content insights from the document
+                if asking_about_provisions and obbba_doc.get('summary'):
+                    response_parts.append(f"\n**Based on the available information:**")
+                    response_parts.append(f"{obbba_doc['summary'][:400]}...")
+                
+            elif infrastructure_docs:
+                response_parts.append(f"**About Infrastructure Legislation (\"Big Beautiful Bill\" context):**")
+                response_parts.append(f"While I found {len(infrastructure_docs)} infrastructure-related documents, the most relevant appears to be **{infrastructure_docs[0]['identifier']}**: {infrastructure_docs[0]['title']}")
+            
+            # Add policy context for Big Beautiful Bill
+            if asking_about_provisions:
+                response_parts.append(f"\n**Key Policy Areas Typically Covered:**")
+                response_parts.append(f"• **Transportation Infrastructure**: Roads, bridges, airports, and transit systems")
+                response_parts.append(f"• **Broadband & Digital**: High-speed internet access expansion")
+                response_parts.append(f"• **Water Systems**: Drinking water and wastewater infrastructure")
+                response_parts.append(f"• **Energy Grid**: Power transmission and clean energy projects")
+                response_parts.append(f"• **Climate Resilience**: Infrastructure adaptation for climate change")
+                response_parts.append(f"• **Job Creation**: Employment through infrastructure investment")
+        
         else:
-            response_parts.append(f"I found {len(documents)} government documents related to '{query}'.")
+            # Standard response for other queries
+            if "infrastructure" in query_lower:
+                response_parts.append(f"I found {len(documents)} infrastructure-related government documents.")
+            else:
+                response_parts.append(f"I found {len(documents)} government documents related to your query.")
         
-        # Analyze document types and provide context
-        bill_count = sum(1 for d in documents if d['document_type'] == 'bill')
-        eo_count = sum(1 for d in documents if d['document_type'] == 'executive_order')
-        pres_count = sum(1 for d in documents if d['document_type'] == 'presidential_document')
-        
-        doc_type_info = []
-        if bill_count > 0:
-            doc_type_info.append(f"{bill_count} congressional bill{'s' if bill_count != 1 else ''}")
-        if eo_count > 0:
-            doc_type_info.append(f"{eo_count} executive order{'s' if eo_count != 1 else ''}")
-        if pres_count > 0:
-            doc_type_info.append(f"{pres_count} presidential document{'s' if pres_count != 1 else ''}")
-        
-        if doc_type_info:
-            response_parts.append(f"This includes {', '.join(doc_type_info)}.")
-        
-        # Analyze top results for specific insights
-        top_doc = documents[0]
-        if "one big beautiful" in query_lower and "beautiful" in top_doc.get('title', '').lower():
-            response_parts.append(f"\n\n**Most Relevant**: **{top_doc['identifier']}** appears to be directly related to the 'One Big Beautiful Bill Act' you're searching for.")
-        elif top_doc.get('relevance_score', 0) > 2.0:  # High relevance score
-            response_parts.append(f"\n\n**Top Result**: **{top_doc['identifier']}** is highly relevant to your query.")
-        
-        # Add detailed document analysis
-        if len(documents) > 1:
-            response_parts.append("\n\n**Key findings:**")
+        # Document analysis section
+        if len(documents) > 0:
+            response_parts.append(f"\n**Key Documents Found:**")
             for i, doc in enumerate(documents[:3], 1):
                 title = doc['title']
-                # Highlight matching terms
-                highlighted_title = title
-                for word in query.split():
-                    if len(word) > 3 and word.lower() in title.lower():
-                        highlighted_title = highlighted_title.replace(word, f"**{word}**")
-                
                 status_text = f" (Status: {doc.get('status', 'Unknown')})" if doc.get('status') else ""
-                response_parts.append(f"{i}. **{doc['identifier']}**: {highlighted_title[:120]}{'...' if len(title) > 120 else ''}{status_text}")
+                
+                # Add summary information if available
+                summary_preview = ""
+                if doc.get('summary') and len(doc['summary']) > 100:
+                    summary_preview = f"\n   *{doc['summary'][:150]}...*"
+                
+                response_parts.append(f"{i}. **{doc['identifier']}**: {title[:100]}{'...' if len(title) > 100 else ''}{status_text}{summary_preview}")
         
-        # Add specific insights based on query context
-        if "infrastructure" in query_lower:
-            response_parts.append("\n\n*These documents relate to infrastructure policy, which includes transportation, broadband, utilities, and public works projects.*")
-        elif "beautiful" in query_lower:
-            response_parts.append("\n\n*The 'One Big Beautiful Bill' typically refers to comprehensive infrastructure legislation.*")
+        # Specific guidance based on query type
+        if asking_about_provisions:
+            response_parts.append(f"\n**💡 For Detailed Provisions**: Click on the document identifiers above to view the full legislative text, which will contain the specific provisions, funding amounts, and implementation details you're looking for.")
         
-        response_parts.append("\n\nClick on any document identifier above to view the full text and legislative details.")
+        # Educational context
+        if asking_about_big_beautiful:
+            response_parts.append(f"\n**📚 Context**: The term 'Big Beautiful Bill' often refers to comprehensive infrastructure legislation that combines multiple policy areas into a single large-scale investment package.")
+        
+        response_parts.append(f"\n**📄 Next Steps**: Click any document identifier above to access the complete text and detailed analysis.")
         
         return {
             "response": "\n".join(response_parts),
