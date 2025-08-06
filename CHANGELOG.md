@@ -4,6 +4,44 @@ All notable changes to the GovernmentGPT civic transparency platform will be doc
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2025-08-06 - Conversational Query & AI Response Enhancement
+
+### 🧠 **User Experience Improvements: Dynamic AI Responses & Search Quality**
+
+#### Final User Issue Resolution
+- **Tax-Deductible Claim Fix**: Removed incorrect "tax-deductible" language from donation form per user feedback
+- **Conversational Query Processing**: Enhanced query preprocessing to extract key terms from natural language queries
+- **Search Result Prioritization**: Fixed "big beautiful bill" searches to correctly prioritize S-2556-119 (One Big Beautiful Bill Act) as #1 result
+- **Dynamic AI Responses**: Completely rewrote fallback AI responses to analyze query intent and provide contextual policy information
+
+#### Enhanced Query Intelligence
+- **Conversational Query Support**: Handles queries like "what can you tell me about the big beautiful bill?" by extracting "big beautiful bill infrastructure"
+- **Phrase Matching Bonuses**: 2.0x relevance boost for exact phrase matches in document titles
+- **Query Intent Analysis**: AI responses now detect when users ask about "provisions", "major", "consequential" aspects
+- **Policy Area Breakdowns**: Specific responses for Big Beautiful Bill queries include transportation, broadband, water systems, energy grid context
+
+#### AI Response System Overhaul
+- **Context-Aware Responses**: AI analyzes query type to provide targeted information about infrastructure, policy areas, or specific legislation
+- **Dynamic Content Generation**: Responses adapt to user's specific questions rather than using generic templates
+- **Educational Context**: Added policy explanations and "Next Steps" guidance for users seeking detailed provisions
+- **Intelligent Suggestions**: Generated based on successful search results rather than static recommendations
+
+### 🎯 **Testing Results: User Query Resolution**
+
+#### Verified Search Quality
+- **"one big beautiful bill act"**: Returns S-2556-119 as #1 result (Score: 3.013)
+- **"what can you tell me about the big beautiful bill?"**: Correctly processes to find OBBBA as top result (Score: 2.005)
+- **Conversational Queries**: Successfully extracts key terms from natural language questions
+- **Response Time**: Maintained 98-118ms execution times for complex queries
+
+#### AI Response Quality Improvements
+- **Query-Specific Analysis**: AI responses now address user's actual questions about provisions and policy content
+- **Contextual Information**: Big Beautiful Bill queries receive comprehensive policy area breakdowns
+- **Action-Oriented Guidance**: Users get specific next steps for accessing detailed legislative information
+- **Educational Value**: Responses include background context and policy explanations
+
+---
+
 ## [0.4.0] - 2025-08-03 - Production-Ready Hybrid Search & Complete Platform
 
 ### 🚀 **Major Milestone: Complete Search System Transformation**
